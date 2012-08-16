@@ -202,7 +202,7 @@ generate a new TAGS file in directory"
                             (lambda (proc change)
                               (when (string-match "\\(finished\\|exited\\)" change)
                                 (kill-buffer " *update TAGS*")
-                                (message "TAGS in parent directory is updated. "  )
+                                ;;(message "TAGS in parent directory is updated. "  )
                                 ))))))
 
 ;;;###autoload
