@@ -111,7 +111,7 @@ ctags-update will be called"
    )
   "other options for ctags"
   :group 'ctags-update
-  :type 'string)
+  :type '(repeat string))
 
 (defvar ctags-update-last-update-time
   (- (float-time (current-time)) ctags-update-delay-seconds 1)
