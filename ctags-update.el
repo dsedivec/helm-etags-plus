@@ -1,9 +1,8 @@
-;;; ctags-update.el --- auto update TAGS in parent directory using exuberant-ctags
+;;; ctags-update.el --- (auto) update TAGS in parent directory using exuberant-ctags
 
-;; Description: auto or not auto update TAGS using exuberant-ctags
 ;; Created: 2011-10-16 13:17
-;; Last Updated: Joseph 2012-06-30 00:27:51 星期六
-;; Version: 0.1.4
+;; Last Updated: 纪秀峰 2012-12-19 10:35:16 星期三
+;; Version: 0.2.1
 ;; Author: Joseph(纪秀峰)  jixiuf@gmail.com
 ;; Keywords: exuberant-ctags etags
 ;; URL: https://github.com/jixiuf/helm-etags-plus
@@ -25,6 +24,7 @@
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
+
 ;; Just put ctags-update.el to your load-path.
 ;; The load-path is usually ~/elisp/.
 ;; It's set in your ~/.emacs like this:
@@ -32,20 +32,23 @@
 ;;
 ;; And the following to your ~/.emacs startup file.
 ;;
-;; (require 'ctags-update)
-;; (ctags-update-minor-mode 1)
+;;(autoload 'turn-on-ctags-auto-update-mode "ctags-update" "turn on `ctags-auto-update-mode'." t)
+;;(add-hook 'c-mode-common-hook  'turn-on-ctags-auto-update-mode)
+;; ...
+;;(add-hook 'emacs-lisp-mode-hook  'turn-on-ctags-auto-update-mode)
 ;;
-;; then when you save a file ,`ctags-update' will recursively searches each
+;; then when you save a file ,`ctags-auto-update-mode' will recursively searches each
 ;; parent directory for a file named 'TAGS'. if found ,it will use
-;; `exuberant-ctags' update TAGS.
+;; `exuberant-ctags' update TAGS,
+;; it would not be updated if last time calling `ctags-update' is not 5 minute age(default).
 ;;
-;; if you want to update TAGS only when you want.
+;; if you want to update TAGS immediately
 ;; you can
 ;;     (autoload 'ctags-update "ctags-update" "update TAGS using ctags" t)
-;; and
-;;     M-x : ctags-update
-;; with prefix `C-u' ,then you can generate a new TAGS file in your
-;; selected directory.
+;;     (global-set-key "\C-cE" 'ctags-update)
+;; with prefix `C-u' ,then you can generate a new TAGS file in your selected directory,
+;; with prefix `C-uC-u' same to prefix `C-u',but save it to kill-ring instead of execute it."
+
 ;;
 ;; on windows ,you can custom `ctags-update-command' like this:
 ;; (when (equal system-type 'windows-nt)
@@ -56,24 +59,28 @@
 ;; Below are complete command list:
 ;;
 ;;  `ctags-update'
-;;    update TAGS in parent directory using `exuberant-ctags' you
-;;  `ctags-update-minor-mode'
+;;    update TAGS in parent directory using `exuberant-ctags'.
+;;  `ctags-auto-update-mode'
 ;;    auto update TAGS using `exuberant-ctags' in parent directory.
+;;  `turn-on-ctags-auto-update-mode'
+;;    turn on `ctags-auto-update-mode'.
 ;;
 ;;; Customizable Options:
 ;;
 ;; Below are customizable option list:
 ;;
 ;;  `ctags-update-command'
-;;    now it only support `exuberant-ctags'
+;;    it only support `exuberant-ctags'
 ;;    default = "ctags"
 ;;  `ctags-update-delay-seconds'
-;;    seconds between each `ctags-update'.
+;;    in `after-save-hook' current-time - last-time must bigger than this value,
 ;;    default = (* 5 60)
 ;;  `ctags-update-other-options'
 ;;    other options for ctags
 ;;    default = (list "--exclude='*.elc'" "--exclude='*.class'" "--exclude='.git'" "--exclude='.svn'" ...)
-
+;;  `ctags-update-lighter'
+;;    Lighter displayed in mode line when `ctags-auto-update-mode'
+;;    default = " ctagsU"
 
 ;;; Code:
 
@@ -83,18 +90,16 @@
   :group 'etags)
 
 (defcustom ctags-update-command "ctags"
-  "now it only support `exuberant-ctags'
-take care it is not the ctags in `emacs-23.3/bin/'
+  "it only support `exuberant-ctags'
+take care it is not the ctags in `emacs-VERSION/bin/'
 you should download `exuberant-ctags' and make sure
-the ctags is under $PATH before `emacs-23.3/bin/'"
+the ctags is under $PATH before `emacs-VERSION/bin/'"
   :type 'string
-  :group 'ctags-update
-  )
+  :group 'ctags-update)
 
 (defcustom ctags-update-delay-seconds  (* 5 60) ; 5 mins
-  "seconds between each `ctags-update'.
-current-time - last-time must bigger than this value ,then
-ctags-update will be called"
+"in `after-save-hook' current-time - last-time must bigger than this value,
+then `ctags-update' will be called"
   :type 'integer
   :group 'ctags-update)
 
@@ -107,22 +112,26 @@ ctags-update will be called"
    "--exclude='SCCS'"
    "--exclude='RCS'"
    "--exclude='CVS'"
-   "--exclude='EIFGEN'"
-   )
+   "--exclude='EIFGEN'")
   "other options for ctags"
   :group 'ctags-update
   :type '(repeat string))
 
+(defcustom ctags-update-lighter " ctagsU"
+  "Lighter displayed in mode line when `ctags-auto-update-mode'
+is enabled."
+  :group 'ctags-update
+  :type 'string)
+
 (defvar ctags-update-last-update-time
   (- (float-time (current-time)) ctags-update-delay-seconds 1)
-  "make sure when user first call `ctags-update' it can run immediately "
-  )
+  "make sure when user first call `ctags-update' it can run immediately")
 
-(defvar ctags-update-minor-mode-map
+(defvar ctags-auto-update-mode-map
   (let ((map (make-sparse-keymap)))
     map))
 
-(defvar  ctags-update-minor-mode-hook nil)
+(defvar  ctags-auto-update-mode-hook nil)
 
 (defvar ctags-update-use-xemacs-etags-p
   (fboundp 'get-tag-table-buffer)
@@ -147,12 +156,19 @@ the command to update TAGS"
          (tagdir-without-slash-appended (substring tagdir-with-slash-appended 0 (1- length-of-tagfile-directory)))
          (args
           (append
-           (list "-R" "-e" "-f")
-           (list (get-system-file-path (or save-tagfile-to-as tagfile-full-path)))
+           (list "-R" "-e" )
+           (when (equal system-type 'windows-nt)
+             (list "-f" (get-system-file-path (or save-tagfile-to-as tagfile-full-path))))
            ctags-update-other-options
-           (list tagdir-without-slash-appended)
+           (if (equal system-type 'windows-nt)
+               (list tagdir-without-slash-appended)
+             (list "."))
            )))
     args))
+(defun ctags-update-get-command(command command-args)
+  "get the full command as string."
+  (concat command " "(mapconcat 'identity  command-args " ")))
+
 
 (defun get-system-file-path(file-path)
   "when on windows `expand-file-name' will translate from \\ to /
@@ -173,15 +189,16 @@ not visiting a file"
 
 ;;;###autoload
 (defun ctags-update(&optional args)
-  "update TAGS in parent directory using `exuberant-ctags' you
-can call this function directly , or enable
-`ctags-update-minor-mode' or with prefix `C-u' then you can
-generate a new TAGS file in directory"
+  "update TAGS in parent directory using `exuberant-ctags'.
+1. you can call this function directly,
+2. enable `ctags-auto-update-mode',
+3. with prefix `C-u' then you can generate a new TAGS file in directory,
+4. with prefix `C-uC-u' save the command to kill-ring instead of execute it."
   (interactive "P")
   (let (tags-file-name process)
     (when (or (and args (setq tags-file-name
                               (expand-file-name
-                               "TAGS" (read-directory-name "Generate new TAGS to:" ))))
+                               "TAGS" (read-directory-name "Generate new TAGS to directory:" ))))
               (and (not (get-process "update TAGS"));;if "update TAGS" process is not already running
                    (or (called-interactively-p 'interactive)
                        (> (- (float-time (current-time))
@@ -193,36 +210,59 @@ generate a new TAGS file in directory"
                                            (ctags-update-file-truename (buffer-file-name)))
                              ))))
       (setq ctags-update-last-update-time (float-time (current-time)));;update time
-      (setq process
-            (apply 'start-process ;;
-                   "update TAGS" " *update TAGS*"
-                   ctags-update-command
-                   (ctags-update-command-args tags-file-name)))
-      (set-process-sentinel process
-                            (lambda (proc change)
-                              (when (string-match "\\(finished\\|exited\\)" change)
-                                (kill-buffer " *update TAGS*")
-                                ;;(message "TAGS in parent directory is updated. "  )
-                                ))))))
+      (let ((orig-default-directory default-directory)
+            (default-directory (file-name-directory tags-file-name)))
+        (when (equal system-type 'windows-nt)
+          (setq default-directory orig-default-directory))
+        (cond
+         ;;with prefix `C-uC-u' save the command to kill-ring
+         ;; sometime the directory you select need root privilege
+         ;; so save the command to kill-ring,
+         ((and (called-interactively-p 'interactive) args (equal args '(16)))
+          (kill-new (format "cd %s && %s" default-directory
+                            (ctags-update-get-command
+                             ctags-update-command (ctags-update-command-args tags-file-name))))
+          (message "save ctags-upate command to king-ring. (C-y) yank it back."))
+         (t
+          (setq process
+                (apply 'start-process ;;
+                       "update TAGS" " *update TAGS*"
+                       ctags-update-command
+                       (ctags-update-command-args tags-file-name)))
+          (set-process-sentinel process
+                                (lambda (proc change)
+                                  (when (string-match "\\(finished\\|exited\\)" change)
+                                    (kill-buffer " *update TAGS*")
+                                    ;;(message "TAGS in parent directory is updated. "  )
+                                    )))
+          ))))))
 
 ;;;###autoload
-(define-minor-mode ctags-update-minor-mode
+(define-minor-mode ctags-auto-update-mode
   "auto update TAGS using `exuberant-ctags' in parent directory."
-  :lighter " ctagsU"
-  :keymap ctags-update-minor-mode-map
-  :group 'etags
-  (if ctags-update-minor-mode
+  :lighter ctags-update-lighter
+  :keymap ctags-auto-update-mode-map
+  ;; :global t
+  :init-value nil
+  :group 'ctags-update
+  (if ctags-auto-update-mode
       (progn
-        (add-hook 'after-save-hook 'ctags-update)
-        (run-hooks 'ctags-update-minor-mode-hook)
-        )
-    (remove-hook 'after-save-hook 'ctags-update)
-    )
-  )
+        (add-hook 'after-save-hook 'ctags-update nil t)
+        (run-hooks 'ctags-auto-update-mode-hook))
+    (remove-hook 'after-save-hook 'ctags-update t)))
+
+;;;###autoload
+(defun turn-on-ctags-auto-update-mode()
+  "turn on `ctags-auto-update-mode'."
+  (interactive)
+  (ctags-auto-update-mode 1))
+
 (provide 'ctags-update)
 
 ;; Local Variables:
 ;; coding: utf-8
+;; indent-tabs-mode: nil
+;; tab-width: 4
 ;; End:
 
 ;;; ctags-update.el ends here
