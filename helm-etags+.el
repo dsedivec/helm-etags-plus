@@ -1,12 +1,11 @@
 ;;; helm-etags+.el --- Another Etags helm.el interface
 
 ;; Created: 2011-02-23
-;; Last Updated: 纪秀峰 2013-11-25 23:42:03 
-;; Version: 0.1.7
+;; Last Updated: 纪秀峰 2014-07-27 16:56:24
+;; Version: 0.2.1
 ;; Author: 纪秀峰(Joseph) <jixiuf@gmail.com>
 ;; Copyright (C) 2011~2012, 纪秀峰(Joseph), all rights reserved.
 ;; URL       :https://github.com/jixiuf/helm-etags-plus
-;; screencast:http://screencast-repos.googlecode.com/files/emacs-anything-etags-puls.mp4.bz2
 ;; Keywords: helm, etags
 ;; Compatibility: (Test on GNU Emacs 23.2.1)
 ;;
@@ -163,6 +162,12 @@
   :type '(choice (const nil) (const t) (const absolute))
   :group 'helm-etags+)
 
+(defcustom helm-etags+-follow-symlink-p t
+  "see issue #9,maybe you should set `find-file-visit-truename' to nil,
+   if you set this to nil"
+  :type 'boolean
+  :group 'helm-etags+)
+
 (defcustom helm-etags+-filename-location 'filename-after-dir
   "display src filename after src file name parent dir or not."
   :type '(choice (const filename-before-dir) (const filename-after-dir))
@@ -246,6 +251,21 @@ getting candidates.")
     (if (memq tags-case-fold-search '(nil t))
         tags-case-fold-search
       case-fold-search)))
+
+(defun helm-etags+-file-truename(filename)
+  (if helm-etags+-follow-symlink-p
+      (file-truename filename)
+    filename))
+
+(defun helm-etags+-get-symbal-at-point()
+  (let(symbol )
+    (cond ( (equal major-mode 'verilog-mode)
+            (with-syntax-table (copy-syntax-table (syntax-table))
+              (modify-syntax-entry ?`  ".");treat . as punctuation character
+              (setq symbol (thing-at-point 'symbol))))
+          (t
+           (setq symbol (thing-at-point 'symbol))))
+    symbol))
 
 (defun helm-etags+-find-tags-file ()
   "recursively searches each parent directory for a file named 'TAGS' and returns the
@@ -361,12 +381,12 @@ needn't search tag file again."
             (setq tag-line (replace-regexp-in-string  "\t" (make-string tab-width ? ) tag-line))
             (end-of-line)
             ;;(setq src-file-name (etags-file-of-tag))
-            (setq src-file-name   (file-truename (etags-file-of-tag)))
+            (setq src-file-name   (helm-etags+-file-truename (etags-file-of-tag)))
             (let ((display)(real (list  src-file-name tag-info full-tagname))
                   (src-location-display (file-name-nondirectory src-file-name)))
               (cond
                ((equal helm-etags+-use-short-file-name nil)
-                (let ((tag-table-parent (file-truename (file-name-directory (buffer-file-name tag-table-buffer))))
+                (let ((tag-table-parent (helm-etags+-file-truename (file-name-directory (buffer-file-name tag-table-buffer))))
                       (src-file-parent (file-name-directory src-file-name)))
                   (when (string-match  (regexp-quote tag-table-parent) src-file-name)
                     (if (equal 'filename-after-dir helm-etags+-filename-location)
@@ -496,7 +516,7 @@ needn't search tag file again."
     (helm  :sources 'helm-c-source-etags+-select
            ;; :default (concat "\\_<" (thing-at-point 'symbol) "\\_>")
            ;; Initialize input with current symbol
-           :input (or pattern (concat "\\_<" (thing-at-point 'symbol) "\\_>"))
+           :input (or pattern (concat "\\_<" (helm-etags+-get-symbal-at-point) "\\_>"))
            :prompt "Find Tag(require 3 char): ")))
 
 ;; if you want call helm-etags in your special function
