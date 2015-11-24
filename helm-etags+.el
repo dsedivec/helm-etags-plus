@@ -7,6 +7,7 @@
 ;; Copyright (C) 2015, 纪秀峰(Joseph), all rights reserved.
 ;; URL       :https://github.com/jixiuf/helm-etags-plus
 ;; Keywords: helm, etags
+;; Package-Requires: ((helm "1.7.8"))
 ;;
 ;; Features that might be required by this library:
 ;;
@@ -90,6 +91,15 @@
 ;; ;;go forward directly
 ;; (global-set-key "\M-/" 'helm-etags+-history-action-go-forward)
 ;;
+;;  if you do not want use bm.el for navigating history
+;;  you could
+;; (autoload 'bm-bookmark-add "bm" "add bookmark")
+;;      (add-hook 'helm-etags+-before-jump-hook 'bm-bookmark-add)
+;; or   (add-hook 'helm-etags+-before-jump-hook '(lambda()(bm-bookmark-add nil nil t)))
+;; (setq bm-in-lifo-order t)
+;;  then use bm-previous bm-next
+
+;;
 ;; and how to work with etags-table.el
 ;; (require 'etags-table)
 ;; (setq etags-table-alist
@@ -123,9 +133,10 @@
 ;; (require 'custom)
 (require 'etags)
 (require 'helm)
+(require 'helm-utils)
 ;; (require 'helm-config nil t)        ;optional
 (eval-when-compile
-   (require 'helm-match-plugin nil t)
+   (require 'helm-multi-match nil t)
   )
 ;;  ;optional
 
@@ -192,6 +203,10 @@
 (defvar helm-etags+-select-hook nil
   "hooks run before `helm' funcion with
    source `helm-c-source-etags+-select'")
+(defvar helm-etags+-before-jump-hook nil
+  "hooks run before jump to tag location")
+(defvar helm-etags+-after-jump-hook nil
+  "hooks run afterjump to tag location")
 
 ;;; Variables
 (defvar  helm-etags+-markers (make-ring 8))
@@ -218,10 +233,10 @@ will set this variable.")
 
 (defvar helm-etags+-prev-matched-pattern nil
   "work with `helm-etags+-candidates-cache'.
-  the value is (car (helm-mp-split-pattern helm-pattern))
+  the value is (car (helm-mm-split-pattern helm-pattern))
 :the first part of `helm-pattern', the matched
  candidates is saved in `helm-etags+-candidates-cache'. when current
-'(car (helm-mp-split-pattern helm-pattern))' is equals to this value
+'(car (helm-mm-split-pattern helm-pattern))' is equals to this value
 then the cached candidates can be reused ,needn't find from the tag file.")
 
 (defvar helm-etags+-candidates-cache nil
@@ -309,11 +324,11 @@ will search `toString' in all tag files. and the found
 'toString' is stored in `helm-etags+-prev-matched-pattern'
 so when the `helm-pattern' become to 'toString System public'
 needn't search tag file again."
-  (let ((pattern (car (helm-mp-split-pattern helm-etags+-untransformed-helm-pattern))));;default use whole helm-pattern to search in tag files
+  (let ((pattern (car (helm-mm-split-pattern helm-etags+-untransformed-helm-pattern))));;default use whole helm-pattern to search in tag files
     ;; first collect candidates using first part of helm-pattern
     ;; (when (featurep 'helm-match-plugin)
-    ;;   ;;for example  (helm-mp-split-pattern "boo far") -->("boo" "far")
-    ;;   (setq pattern  (car (helm-mp-split-pattern helm-etags+-untransformed-helm-pattern))))
+    ;;   ;;for example  (helm-mm-split-pattern "boo far") -->("boo" "far")
+    ;;   (setq pattern  (car (helm-mm-split-pattern helm-etags+-untransformed-helm-pattern))))
     (cond
      ((or (string-equal "" pattern) (string-equal "\\_<\\_>" pattern))
        nil)
@@ -471,6 +486,7 @@ needn't search tag file again."
       (ring-insert helm-etags+-markers (point-marker))
       ))
 
+  (run-hooks 'helm-etags+-before-jump-hook)
   (helm-etags+-find-tag candidate);;core func.
 
   (when (or  (ring-empty-p helm-etags+-markers)
@@ -479,7 +495,8 @@ needn't search tag file again."
     (let ((index (ring-member helm-etags+-markers (point-marker))))
       (when index (ring-remove helm-etags+-markers index)))
     (ring-insert helm-etags+-markers (point-marker))
-    (setq helm-etags+-cur-mark (point-marker))))
+    (setq helm-etags+-cur-mark (point-marker)))
+  (run-hooks 'helm-etags+-after-jump-hook))
 
 ;; if you want call helm-etags in your special function
 ;; you can do it like this
@@ -674,4 +691,4 @@ needn't search tag file again."
           :preselect  "\t")))           ;if an candidate ,then this line is preselected
 
 (provide 'helm-etags+)
-;;;helm-etags+.el ends here.
+;;; helm-etags+.el ends here.
